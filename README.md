@@ -1,63 +1,66 @@
 # Unified Async LLM Client
 
-A small Python 3.12 example that sends the same prompt through OpenAI or Anthropic using their official asynchronous SDKs. The default run prints a normal answer and then streams a second answer; automated tests mock both SDKs and need no credentials.
+A Python 3.12 example for sending one prompt to OpenAI or Anthropic with official asynchronous SDKs. Run one initializer to prepare the environment, configure a provider, and launch both a normal response and a text stream.
 
 ## Quick start
 
-From PowerShell, create the environment, install dependencies, and prepare local credentials:
+### Windows
+
+Double-click `start-project.bat`, or run this from the project directory:
+
+```powershell
+python bootstrap.py
+```
+
+The initializer uses an existing provider in `.env` when available; otherwise it asks you to select OpenAI or Anthropic. It uses `uv` to provision Python 3.12 when installed, or an existing Python 3.12 interpreter and `pip`. It installs dependencies, securely prompts for the selected provider key when missing, stores it in the ignored `.env`, and starts `main.py`. The key is never placed in a command argument or printed.
+
+The default run asks **¿Qué es la entropía?** once for a complete response and again as a text stream. To select a provider or one mode explicitly:
+
+```powershell
+python bootstrap.py --provider anthropic
+python bootstrap.py --provider openai --mode normal
+```
+
+Use `--setup-only` to prepare Python, install dependencies, and configure the key without making an API call. Use `--non-interactive` for scripts; supply the provider and have its API key in the environment or `.env`, or the initializer exits with guidance instead of prompting.
+
+## Manual setup
+
+If you prefer to manage the environment yourself:
 
 ```powershell
 uv venv --python 3.12
 .venv\Scripts\Activate.ps1
 uv pip install -r requirements.txt
 Copy-Item .env.example .env
+python main.py --provider openai
 ```
 
-Add the API key for your chosen provider to `.env`. The default provider is OpenAI. To use Anthropic instead, set `LLM_PROVIDER=anthropic` or pass `--provider anthropic`. Keep `.env` private; it is excluded from Git.
-
-Run the example:
-
-```powershell
-python main.py
-```
-
-This asks **¿Qué es la entropía?** once for a complete response and again as a text stream. Choose a single mode when needed:
-
-```powershell
-python main.py --provider openai --mode normal
-python main.py --provider anthropic --mode stream
-```
+Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` in `.env`. You can also set `LLM_PROVIDER`, `OPENAI_MODEL`, and `ANTHROPIC_MODEL`. The default provider is OpenAI; the default Anthropic model is Claude Haiku 4.5 (`claude-haiku-4-5-20251001`). Keep real credentials in `.env`; it is excluded from Git.
 
 ## Configuration and errors
 
-`OPENAI_MODEL` and `ANTHROPIC_MODEL` override the model IDs. The default Anthropic model is Claude Haiku 4.5 (`claude-haiku-4-5-20251001`). Temperature is validated from 0 to 2 for OpenAI and 0 to 1 for Anthropic. The configured value is forwarded to the provider; newer Anthropic models may reject the parameter, so use a compatible model if that occurs.
+Temperature is validated from 0 to 2 for OpenAI and 0 to 1 for Anthropic. The configured value is forwarded to the provider; newer Anthropic models may reject this parameter, so choose a compatible model if that occurs.
 
-Expected provider and configuration failures are printed to stderr as one JSON object with `provider`, `code`, `message`, and `retryable` fields. Codes are stable across both provider adapters:
+Expected provider and configuration failures are printed to stderr as one JSON object with `provider`, `code`, `message`, and `retryable` fields:
 
 | Code | Meaning | Retryable |
 | --- | --- | --- |
-| `configuration_error` | Invalid local model configuration or missing SDK credentials | No |
+| `configuration_error` | Invalid local settings or missing SDK credentials | No |
 | `authentication_error` | Provider rejected the API key | No |
 | `rate_limit` | Provider rate limit reached | Yes |
 | `network_error` | Connection or timeout failure | Yes |
-| `provider_error` | Other provider error; selected transient HTTP statuses are retryable | Depends on status |
+| `provider_error` | Other provider response; transient HTTP statuses may be retryable | Depends on status |
 
-Streaming failures use the typed `LLMStreamError` exception and the same JSON fields. Retries are reported, not automatically performed.
+Streaming failures use the typed `LLMStreamError` with the same structured fields. The client reports retryability but does not automatically retry requests.
 
 ## Tests
 
-Run offline tests and a syntax check with the Python 3.12 environment:
+Run the offline suite and syntax checks with Python 3.12:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m compileall -q schemas.py llm_client.py main.py tests
-python main.py --help
+python -m compileall -q bootstrap.py schemas.py llm_client.py main.py tests
+python bootstrap.py --help
 ```
 
-Tests use mocked SDK objects; no provider credentials or network access are needed.
-
-## Design notes
-
-- `ChatMessage`, `ModelConfig`, and `ModelResponse` are Pydantic models. Temperature validation is provider-aware.
-- `BaseLLMClient` defines async generation, text streaming, and resource cleanup. `AsyncLLMManager` selects the configured provider.
-- Anthropic receives system instructions through its separate `system` argument, not as a conversation message. Its stream helper is an async context manager; OpenAI's async stream is closed in `finally`. Both SDK clients are closed by the manager.
+Tests mock installers, terminal prompts, and SDK clients; they need neither a real API key nor provider network access.
